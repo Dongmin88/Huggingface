@@ -73,8 +73,7 @@ if __name__ == "__main__":
     model, tokenizer = setup_llama(api_token)
     
     # 테스트 프롬프트 (더 구체적인 프롬프트 작성)
-    prompt = """다음은 한국의 문화에 대한 포괄적인 설명입니다. 전통 문화, 현대 문화, 
-    그리고 한국만의 독특한 특징을 포함하여 설명해주세요:"""
+    prompt = """파인튜닝에 대해서 알려줘?"""
     
     # 텍스트 생성
     generated_texts = generate_text(prompt, model, tokenizer)
