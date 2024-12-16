@@ -144,7 +144,7 @@ if __name__ == "__main__":
     
     # 다양한 주제에 대한 테스트
     queries = [
-        "LLM 파인튜닝 할려고 한다. 모델 추천해줘."
+        "세종대왕 시대 떄 나온 책 다 알려줘."
     ]
     
     for query in queries:
