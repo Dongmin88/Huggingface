@@ -9,7 +9,7 @@ model = AutoModelForCausalLM.from_pretrained(
     torch_dtype=torch.bfloat16,
     device_map="auto",
 )
-instruction = "llm에서 파인튜닝의 효과를 알려줘?"
+instruction = "뉴진스를 아나??"
 
 messages = [
     {"role": "user", "content": f"{instruction}"}
