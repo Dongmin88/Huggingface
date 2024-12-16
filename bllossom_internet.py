@@ -19,17 +19,21 @@ class RAGSearchLLM:
         )
         self.ddgs = DDGS()
         
-    def search_internet(self, query: str, max_results: int = 3) -> List[str]:
+    def clean_text(self, text: str) -> str:
+        """텍스트 정리를 위한 유틸리티 함수"""
+        # 불필요한 공백 제거
+        text = ' '.join(text.split())
+        # 특수문자 처리 등 추가 가능
+        return text
+        
+    def search_internet(self, query: str, max_results: int = 5) -> List[str]:
         """인터넷 검색을 수행하고 결과를 반환합니다."""
         logger.info(f"검색 쿼리: {query}")
         
         try:
-            # 검색어를 명확하게 지정
-            search_query = "NewJeans 뉴진스 아이돌 그룹 2022 데뷔 대표곡"
-            
             # DuckDuckGo 검색 수행
             results = []
-            for r in self.ddgs.text(search_query, max_results=max_results):
+            for r in self.ddgs.text(query, max_results=max_results):
                 logger.info(f"검색 결과: {r}")
                 results.append(r)
             
@@ -38,51 +42,52 @@ class RAGSearchLLM:
             
             for result in results:
                 try:
-                    # 웹사이트 접근을 위한 헤더
                     headers = {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                         'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
                     }
                     
-                    if 'link' in result:
-                        logger.info(f"URL 접근 시도: {result['link']}")
-                        response = requests.get(
-                            result['link'],
-                            headers=headers,
-                            timeout=10,
-                            verify=False  # SSL 인증서 검증 건너뛰기
-                        )
+                    # 'link' 대신 'href' 키 사용
+                    if 'href' in result:
+                        url = result['href']
+                        logger.info(f"URL 접근 시도: {url}")
                         
-                        if response.status_code == 200:
-                            soup = BeautifulSoup(response.text, 'html.parser')
+                        # 검색 결과 텍스트도 contents에 추가
+                        if 'body' in result:
+                            contents.append(f"제목: {result.get('title', '')}\n내용: {result['body']}")
+                        
+                        try:
+                            response = requests.get(
+                                url,
+                                headers=headers,
+                                timeout=10,
+                                verify=False
+                            )
                             
-                            # 텍스트 추출 방식 개선
-                            text_parts = []
-                            for p in soup.find_all(['p', 'div', 'span']):
-                                if p.text and len(p.text.strip()) > 50:  # 의미있는 텍스트만 추출
-                                    text_parts.append(p.text.strip())
-                            
-                            if text_parts:
-                                combined_text = ' '.join(text_parts)
-                                contents.append(combined_text[:1000])  # 더 긴 컨텍스트 허용
-                                logger.info(f"컨텐츠 추출 성공 (길이: {len(combined_text[:1000])})")
+                            if response.status_code == 200:
+                                soup = BeautifulSoup(response.text, 'html.parser')
+                                
+                                # 본문 내용 추출
+                                text_parts = []
+                                for element in soup.find_all(['article', 'main', 'div', 'p']):
+                                    text = element.get_text(strip=True)
+                                    if len(text) > 100:
+                                        text_parts.append(text)
+                                
+                                if text_parts:
+                                    combined_text = ' '.join(text_parts)
+                                    contents.append(combined_text[:1500])
+                                    logger.info(f"웹페이지에서 컨텐츠 추출 성공 (길이: {len(combined_text[:1500])})")
+                        except:
+                            logger.info("웹페이지 접근 실패, 검색 결과 텍스트만 사용")
                     
                 except Exception as e:
-                    logger.error(f"URL 처리 중 오류 발생: {str(e)}")
+                    logger.error(f"결과 처리 중 오류 발생: {str(e)}")
                     continue
             
-            # 검색 결과가 없는 경우를 위한 기본 정보 추가
-            if not contents:
-                default_info = """
-                뉴진스(NewJeans)는 2022년 7월 1일에 데뷔한 하이브(HYBE) 산하 레이블 어도어의 5인조 걸그룹입니다.
-                멤버는 민지, 하니, 다니엘, 해린, 혜인으로 구성되어 있습니다.
-                대표곡으로는 'Attention', 'Hype Boy', 'Cookie', 'Ditto', 'OMG', 'Super Shy', 'ETA', 'Cool With You' 등이 있습니다.
-                """
-                contents.append(default_info)
-            
             logger.info(f"최종 추출된 콘텐츠 수: {len(contents)}")
-            return contents
+            return contents if contents else ["검색 결과를 찾을 수 없습니다."]
             
         except Exception as e:
             logger.error(f"검색 중 오류 발생: {str(e)}")
@@ -90,9 +95,11 @@ class RAGSearchLLM:
 
     def generate_response(self, instruction: str, search_results: List[str]) -> str:
         """검색 결과를 포함하여 응답을 생성합니다."""
-        context = "\n".join(search_results)
-        prompt = f"""다음은 뉴진스(NewJeans)에 대한 정보입니다:
+        context = "\n---\n".join(search_results)
+        prompt = f"""다음은 검색된 관련 정보입니다:
+---
 {context}
+---
 
 질문: {instruction}
 답변:"""
@@ -135,6 +142,12 @@ if __name__ == "__main__":
     model_id = 'Bllossom/llama-3.2-Korean-Bllossom-3B'
     rag_llm = RAGSearchLLM(model_id)
     
-    response = rag_llm.query("뉴진스 가수에 대해 알려줘 2022년 데뷔했다. 대표적인 곡 알려줘")
-    print("\n최종 응답:")
-    print(response)
+    # 다양한 주제에 대한 테스트
+    queries = [
+        "대한민국의 수도 서울에 대해 설명해주세요"
+    ]
+    
+    for query in queries:
+        print(f"\n질문: {query}")
+        response = rag_llm.query(query)
+        print("답변:", response)
