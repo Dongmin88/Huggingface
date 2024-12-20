@@ -67,7 +67,7 @@ def generate_text(prompt, model, tokenizer,
 # 사용 예시
 if __name__ == "__main__":
     # Hugging Face API 토큰
-    api_token = "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"
+    api_token = "your token"
     
     # 모델과 토크나이저 설정
     model, tokenizer = setup_llama(api_token)
