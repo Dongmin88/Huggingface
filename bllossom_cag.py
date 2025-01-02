@@ -31,15 +31,19 @@ class CAGModel:
             add_special_tokens=True
         ).to(self.model.device)
         
+        terminators = [
+            self.tokenizer.convert_tokens_to_ids("<|end_of_text|>"),
+            self.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+        ]
+
         outputs = self.model.generate(
             inputs.input_ids,
-            max_new_tokens=1024,  # 토큰 수 제한
+            max_new_tokens=1024,
+            eos_token_id=terminators,
             do_sample=True,
-            temperature=0.7,     # 온도 조정
+            temperature=0.6,
             top_p=0.9,
-            repetition_penalty=1.2,  # 반복 패널티 추가
-            no_repeat_ngram_size=3,  # n-gram 반복 방지
-            early_stopping=True
+            repetition_penalty=1.2,  # 반복 패널티
         )
         
         response = self.tokenizer.decode(
