@@ -5,7 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 from typing import List, Dict, Tuple
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, quote_plus
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,7 +15,27 @@ class WebScraper:
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
+        self.search_url = "https://search.naver.com/search.naver"
         
+    def get_search_urls(self, query: str, num_results: int = 5) -> List[str]:
+        try:
+            params = {"query": query, "where": "web"}
+            response = requests.get(self.search_url, params=params, headers=self.headers)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            links = soup.select("a.link_tit")  # Naver search result links
+            
+            urls = []
+            for link in links[:num_results]:
+                if 'href' in link.attrs:
+                    urls.append(link['href'])
+            return urls
+            
+        except Exception as e:
+            logger.error(f"Search failed: {str(e)}")
+            return []
+            
     def _is_valid_url(self, url: str) -> bool:
         try:
             result = urlparse(url)
@@ -32,7 +52,6 @@ class WebScraper:
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Remove script and style elements
             for script in soup(["script", "style"]):
                 script.decompose()
                 
@@ -47,9 +66,11 @@ class WebScraper:
             logger.error(f"Failed to scrape {url}: {str(e)}")
             return ""
             
-    def search(self, urls: List[str], max_pages: int = 5) -> List[Dict]:
+    def search_and_scrape(self, query: str, max_results: int = 5) -> List[Dict]:
+        urls = self.get_search_urls(query, max_results)
         results = []
-        for url in urls[:max_pages]:
+        
+        for url in urls:
             text = self.scrape_page(url)
             if text:
                 results.append({
@@ -58,7 +79,7 @@ class WebScraper:
                 })
         return results
 
-class CAGModelWithScraping:
+class CAGModelWithSearch:
     def __init__(self, model_id: str):
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -83,15 +104,15 @@ class CAGModelWithScraping:
             return self.tokenizer.decode(tokens)
         return text
         
-    def preload_knowledge(self, documents: List[str], urls: List[str] = None):
+    def preload_knowledge(self, documents: List[str], query: str = None):
         base_context = "\n\n".join(documents)
         
-        if urls:
-            scraped_results = self.scraper.search(urls)
+        if query:
+            scraped_results = self.scraper.search_and_scrape(query)
             web_context = []
             
             for result in scraped_results:
-                cleaned_text = self._clean_text(result['content'])[:1000]  # Limit each result
+                cleaned_text = self._clean_text(result['content'])[:1000]
                 web_context.append(cleaned_text)
             
             combined_context = base_context + "\n\n웹 검색 결과:\n" + "\n\n".join(web_context)
@@ -153,7 +174,7 @@ class CAGModelWithScraping:
 
 if __name__ == "__main__":
     model_id = 'Bllossom/llama-3.2-Korean-Bllossom-3B'
-    cag_model = CAGModelWithScraping(model_id)
+    cag_model = CAGModelWithSearch(model_id)
     
     documents = [
         "세종대왕은 조선 제4대 왕이다.",
@@ -161,14 +182,8 @@ if __name__ == "__main__":
         "집현전을 설립하였다."
     ]
     
-    urls = [
-        "https://ko.wikipedia.org/wiki/세종대왕",
-        "https://www.museum.go.kr/site/main/content/세종대왕"
-    ]
-    
-    cag_model.preload_knowledge(documents, urls)
-    
     query = "세종대왕의 업적은 무엇인가?"
+    cag_model.preload_knowledge(documents, query)
     response, token_info = cag_model.generate_response(query)
     
     print(f"질문: {query}")
